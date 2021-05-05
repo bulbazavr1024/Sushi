@@ -15,8 +15,10 @@ const ContractCGT = new web3.eth.Contract(CGT, '0xf56b164efd3cfc02ba739b719b6526
 
 
 (async () => {
-
-    let uniqueAddresses = {};
+    let pid0 = {}
+    let pidOther = {}
+    let uniqueAddresses = {pid0, pidOther};
+    let totalSupply = await ContractCGT.methods.totalSupply().call();
     let eventsDeposit = await ContractChef.getPastEvents("Deposit", {
         fromBlock: 0,
         toBlock: 'latest'
@@ -40,21 +42,23 @@ const ContractCGT = new web3.eth.Contract(CGT, '0xf56b164efd3cfc02ba739b719b6526
 
         let amount = parseInt(row.returnValues.amount);
 
-        if (row.returnValues.pid === "0") console.log(user);
         if (row.returnValues.pid === "0") {
-            continue;
+            console.log(user);
+            uniqueAddresses.pid0[user] = {deposit: amount}
+            continue
         }
 
-        if (typeof uniqueAddresses[user] === "undefined") {
-            uniqueAddresses[user] = {deposit: amount};
+
+        if (typeof uniqueAddresses.pidOther[user] === "undefined") {
+            uniqueAddresses.pidOther[user] = {deposit: amount};
         } else {
-            uniqueAddresses[user].deposit += amount;
+            uniqueAddresses.pidOther[user].deposit += amount;
         }
 
     }
 
-
-    // for (let row of eventsWithdraw) {
+//______________________________________________________________//
+    // for (let row of eventsharvestedTokens) {
     //     const user = row.returnValues.user.toLowerCase();
     //     const amount = parseInt(row.returnValues.amount);
     //
@@ -62,35 +66,69 @@ const ContractCGT = new web3.eth.Contract(CGT, '0xf56b164efd3cfc02ba739b719b6526
     //     if (row.returnValues.pid === "0") continue;
     //
     //     if (typeof uniqueAddresses[user] === "undefined") {
-    //         uniqueAddresses[user] = {withdraw: amount};
+    //         uniqueAddresses[user] = {harvestedTokens: amount};
     //     } else {
-    //         uniqueAddresses[user].withdraw += amount;
+    //         uniqueAddresses[user].harvestedTokens += amount;
     //     }
     // }
+    //
+    // ______________________________________________________________//
 
 
-    for (const user of Object.keys(uniqueAddresses)) {
+    for (const user of Object.keys(uniqueAddresses.pidOther)) {
 
-        uniqueAddresses[user].pending0 = await ContractChef.methods.pendingSushi(0, user).call();
-        uniqueAddresses[user].pending1 = await ContractChef.methods.pendingSushi(1, user).call();
-        uniqueAddresses[user].pending2 = await ContractChef.methods.pendingSushi(2, user).call();
-        uniqueAddresses[user].pending3 = await ContractChef.methods.pendingSushi(3, user).call();
+        uniqueAddresses.pidOther[user].pending1 = Number(await ContractChef.methods.pendingSushi(1, user).call());
+        uniqueAddresses.pidOther[user].pending2 = Number(await ContractChef.methods.pendingSushi(2, user).call());
+        uniqueAddresses.pidOther[user].pending3 = Number(await ContractChef.methods.pendingSushi(3, user).call());
     }
 
-    for (let user of Object.keys(uniqueAddresses)) {
+
+    for (const user of Object.keys(uniqueAddresses.pid0)) {
+
+        uniqueAddresses.pid0[user].pending0 = Number(await ContractChef.methods.pendingSushi(0, user).call());
+
+    }
+
+
+    for (let user of Object.keys(uniqueAddresses.pidOther)) {
         let transaction = await axios.get(`https://api.etherscan.io/api?module=account&action=tokentx&address=${user}&startblock=0&endblock=999999999&sort=asc&apikey=B37NC728AS31WBW26RN9PMR2WTUS22P66F`)
-        uniqueAddresses[user].withdraw = 0
+        uniqueAddresses.pidOther[user].harvestedTokens = 0
         for (let i = 0; i < transaction.data.result.length; i++) {
-            if (transaction.data.result[i].from == "0xe8Cc9f640C55f3c5905FD2BBb63C53fb8A3A527d".toLowerCase()) {
-                 uniqueAddresses[user].withdraw += Number(transaction.data.result[i].value)
+            if (transaction.data.result[i].from === "0xe8Cc9f640C55f3c5905FD2BBb63C53fb8A3A527d".toLowerCase()) {
+                uniqueAddresses.pidOther[user].harvestedTokens += Number(transaction.data.result[i].value)
             }
         }
-        //
-        // uniqueAddresses[user].withdraw = Number(value);
-         console.log(user + ':' + uniqueAddresses[user].withdraw)
-
+        console.log(user + ':' + uniqueAddresses.pidOther[user].harvestedTokens)
     }
 
+    for (let user of Object.keys(uniqueAddresses.pid0)) {
+        let transaction = await axios.get(`https://api.etherscan.io/api?module=account&action=tokentx&address=${user}&startblock=0&endblock=999999999&sort=asc&apikey=B37NC728AS31WBW26RN9PMR2WTUS22P66F`)
+        uniqueAddresses.pid0[user].harvestedTokens = 0
+        for (let i = 0; i < transaction.data.result.length; i++) {
+            if (transaction.data.result[i].from === "0xe8Cc9f640C55f3c5905FD2BBb63C53fb8A3A527d".toLowerCase()) {
+                uniqueAddresses.pid0[user].harvestedTokens += Number(transaction.data.result[i].value)
+            }
+        }
+        console.log(user + ':' + uniqueAddresses.pid0[user].harvestedTokens)
+    }
+
+    for (let user of Object.keys(uniqueAddresses.pidOther)) {
+
+        uniqueAddresses.pidOther[user].userTokens = uniqueAddresses.pidOther[user].harvestedTokens +
+            (Number(uniqueAddresses.pidOther[user].pending1)
+                + Number(uniqueAddresses.pidOther[user].pending2)
+                + Number(uniqueAddresses.pidOther[user].pending3))
+    }
+
+    for (let user of Object.keys(uniqueAddresses.pid0)) {
+        uniqueAddresses.pid0[user].userTokens = uniqueAddresses.pid0[user].harvestedTokens + Number(uniqueAddresses.pid0[user].pending0)
+    }
+
+    for (let user of Object.keys(uniqueAddresses.pidOther)) {
+
+        uniqueAddresses.pidOther[user].DUMMYpart = uniqueAddresses.pidOther[user].userTokens / totalSupply
+
+    }
 
     //console.log(uniqueAddresses);
 
